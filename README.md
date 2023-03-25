@@ -1,2 +1,0 @@
-# nseq
-Secret special project
