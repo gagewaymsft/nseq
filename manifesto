@@ -1,0 +1,29 @@
+things all DAWs do badly
+1. GUIs look like bill gates on a bad day
+        grey boxes with color accents
+        design should have a personality
+2. idioms just copy 70's studio workflows
+        hardware emulation is great but it's already been perfected
+        needs to feel intuitive and fun to use
+        intro users should be able to do basic stuff quickly
+        and pro users should be able to get under the hood and do real work
+3. too proprietary, bloated
+        can't collaborate with people in different environments and platforms
+        no low spec support despite no useful new features since the 90's
+4. not modular
+        a voice over actor doesn't need virtual instruments
+        a bedroom producer doesn't need a billion routing options
+        needs to be able to turn on and off modules at runtime and / or install
+5. inadequate midi implementation
+        midi is simple. midi is life. it's just ints.
+        humanization is always a hack. it's easy to do. should be built in.
+        converting audio to midi values is hard but there must be a better way
+        randomization / algorithmic generation based on seed inputs built in
+6. no CLI mode / batch processing
+        weird electronic artists want it, AI researchers need it
+7. no TUI mode
+        nobody wants this except nathan but he wants it a lot
+8. audio vs midi tracks
+        bifurcation is a legacy of 80s workflows. it's confusing and unnecessary.
+        an audio track is just a midi track with one note that plays for a long time
+        alternate takes of audio should just be different midi notes
