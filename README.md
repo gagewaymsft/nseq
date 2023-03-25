@@ -5,19 +5,19 @@ Secret special project
 
 Git fundamentals
 
-git fetch - retrieves changes on remote branch 
-git pull - puts those changes in your local copy of the branch
+`git fetch` - retrieves changes on remote branch 
+`git pull` - puts those changes in your local copy of the branch
 
-git merge - merges an iteration of the code into yours
+`git merge` - merges an iteration of the code into yours
 
-git add <filename> adds a file changed to stage
+`git add <filename>` - adds a file changed to stage
 
-git add . - adds all current files changed to stage
+`git add .` - adds all current files changed to stage
 
-git commit -m "some message" - creates a commit with "some message"
+`git commit -m "some message"` - creates a commit with "some message"
 
-git push - pushes commit to local branch, IF no remote origin set:
-git push -u origin <some branch> - sets the upstream remote branch
+`git push` - pushes commit to local branch, IF no remote origin set:
+`git push -u origin <some branch>` - sets the upstream remote branch
 
 Some aliases to add to your .gitconfig, just copy and paste this in
 ```bash
