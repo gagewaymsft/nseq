@@ -1,0 +1,394 @@
+if we treat data like analog synths treat voltage
+we can combine basic data processing nodes
+into complex DSPs and humanized playback
+
+general thoughts:
+
+vectors are probably better than arrays in most cases except midi
+  * performance tradeoff is minimal and more flexibility w/ less risk of mem leak
+  * audio data adds up fast in ram
+  * where i say "collection" i mean some kind of tbd data set, array, vector, map idk
+    - i hate maps. i know they're useful but i find them confusing.
+      + i will avoid them at all costs. good luck.
+low level apis are going to request a lot of c strings
+  * probably best to use only c++ style strings and convert to c_str only when needed
+do we need a special float struct that includes a defined precision?
+  * this is useful since humans think in percents and synths think in raw numbers
+  * older synths and HW especially just use raw numbers as percentages
+    - Yamaha conventions are weird but often followed
+    - Mackie conventions are even weirder but even more often followed
+we should probably default to keeping midi data as midi data until it hits the gui
+  * the exception is pitch bend and any other 14-bit LSB / MSB data encoding
+    - these are pretty rare compared to other data types
+    - they are incredibly annoying to do operations on
+    - conversion functions in as the default for pitch bends will save us misery
+  * sysex probably just needs a big elaborate parsing system
+    - bad sysex parsing can brick a synth
+    - there are so many standards sysex takes
+    - the important ones to try to implement are MSC and MCU
+    - we don't need to get into it for a while
+    - a system that allows the user to have custom sysex parsing is common
+      + most DAWs have this somewhere deep under the hood
+      + just a json file that describes a lookup table or something
+
+conceptual inspiration to look into:
+* west coast style modular synthesis
+* bome's style of matrix-based midi data processing
+* puredata
+* libossia
+* max msp
+* spectralayers 3d waveforms
+* SMAART visualization
+* corny sci-fi guis
+
+classes:
+these are some of the base audio classes we need.
+i'm probably missing a lot of basic gui ones.
+names are just names that make sense to me.
+some are industry standard conventions and some are "i dunno this sounds cool."
+node comes from video design and universe comes from lighting.
+both together feel like a useful way of thinking about modular systems.
+
+parameter:
+  * a variable that can be altered by input or accessed by a node
+  * has a visual component (fader, knob, lcd-type display, etc...)
+    - needs to be able to be flexibly defined
+    - this is where a lot of visual identity will come from
+    - probably vector based only
+      + static image based parameter displays can look bad on later updates
+    - maybe theming would be fun?
+  * can be hidden for basic view or visible for advanced control
+  * visibility doesn't impact sound
+  * cannot be disabled
+  * can be locked by user
+  * can be a float (percentage), int (raw), or enum for string output
+  * max value
+  * min value
+  * precision
+  * midi cc / channel for automation
+    - i've had situations where i ran out of ccs and started using AT and CP for auto
+      + i had to use bomeboxes / midi ox / custom python scripting to do it
+      + maybe it defaults to midi cc but you can change data type by enum if needed
+      + this might want to be a parsed vector of bytes for max flexibility
+
+universe:
+  * a universe is any self-contained hierarchy
+    - elements within a universe cannot communicate with elements within others
+  * the main window is the root universe
+  * each node is a universe
+
+node:
+  * anything that takes input, performs a function, and can send output
+  * most things derive from this class
+  * can have subnodes with subnodes of vast, maybe infinite depth
+  * has a vector of parameters
+  * node data is processed by the smallest subnode first back up
+    - with branching hierarchies wait until all subnodes have processed
+  * has a visual component that can be bypassed without impacting audio
+    - some simple rules-based layout format that can be saved as json
+    - layout can be locked from user control
+    - generally visually minimalist, visually it's a container of parameters
+    - some light theming maybe
+  * can be added, removed, moved, locked, or a "more info / config" view
+  * all of those abilities have a bool allowing user control or not
+    - i.e. we probably don't want the user being able to remove the play button
+    - if a control is locked from user control, there's no icon visual
+  * has patch points for input and output
+    - click and drag from an input to output or sidechannel or parameter in
+    - or doubleclick on slot to bring up list of available nodes
+  * can not patch from Node A to subnode 1 of Node B
+    - no patching across hierarchies or universes
+      + maybe some utilities to circumvent are useful but this is rare to need
+    - can only patch between nodes on the same plane in the same group of subnodes
+  * what happens if you try to patch audio to midi?
+
+audio node:
+  * anything that takes in or out audio data or midi data or both
+    - most things will probably be both
+  * has slots for midi in (left)
+  * has slots for audio in (left)
+  * has slots for parameter in (top)
+  * has slots for sidechain in (bottom)
+  * has slots for midi out / thru (right)
+  * has slots for audio out (right)
+  * should there be a "raw" input slot for chaotic experimentation?
+    - would basically ignore headers if present and just do whatever
+    - i.e. read audio as midi, read tempo as audio, read midi as visual etc...
+    - probably needs to be hidden by default with several layers of "are you sure?"
+  * slots don't follow an analog paradigm
+    - splitting multiple outputs doesn't decrease the signal to both
+    - you can send an unlimitted (or large) number of ouputs to unlimitted inputs
+    - some sort of clamping on input slots to prevent undefined behavior
+  * can be frozen
+    - freezing is complicated and often done badly especially with complex paths
+    - maybe freezing a track freezes all downstream nodes until it reaches a fork?
+    - we'll solve later, for now just a bool, an unused array, and a greyed control
+
+visual node:
+  * anything that does not output audio or midi
+  * examples are oscilloscopes, visualizers, room IR
+  * in cli mode they are completely ignored
+  * some systems allow passthrough of audio / midi, but we shouldn't
+    - it's really confusing with no payoff and could break cli mode
+    - must be patched in parallel, otherwise a dead end for data
+
+input node:
+  * takes audio or midi input from HW
+  * select device, channel
+  * whitelist midi channels
+  * built in gain node
+
+output node:
+  * sends audio or midi output to HW
+  * select device, channel
+  * built in gain node
+
+transport node:
+  * global play / pause etc controls
+    - global play sends a play message to all tracks
+    - constantly updating tracks with both decimal time and tempo time
+    - the source of truth for all timing and sync
+    - tracks are responsible for knowing which clips to play when
+  * deals with tempo and time signature
+  * can control the main output node's master gain parameter
+  * can override some track controls probably
+
+patch:
+  * 2 way data communication between nodes
+
+node message:
+  * either information or a request for information (get / set paradigm)
+  * has a header probably
+  * maybe just a struct
+  * data formats:
+    - int / audio frame
+    - midi message (array of bytes)
+    - string -> or enum?
+  * finding the most flexible but optimized and hw friendly version will take time
+    - probably for now it has:
+      + a header -> this is where that bool to int hack is useful
+      + a vector of ints
+      + a vector of floats
+      + a vector of strings
+
+midi message:
+  * just an array of bytes, usually 3
+  * could just be a struct
+
+wave:
+  * uncompressed audio
+  * has a cached highly compressed image of the full waveform (time domain)
+  * has a cached visual display of frequency domain would be cool too
+  * some built in cached audio to midi translation is the dream
+    - this will be really hard and should not be something we worry about for a while
+
+frame:
+  * a section of uncompressed audio to be processed in some way
+  * typically this is just an array of bytes or ints
+  * size defined by global buffer size and HW buffer size
+  * should this have a header?
+    - protects from bad patches
+    - performance hit
+  * this should be defined for maximum compatibility with audio engine
+
+wavetable:
+  * a matrix node that maps waves to midi notes and velocities
+    - i.e. if note 60, vel 27 return sample 09
+  * when given a midi note, it returns a wave
+  * has subnodes to add variation to sample playback
+  * parameter for playback rate variety (default = 0)
+  * parameter for playback volume variety (default = 0)
+  * parameter for playback pan variety (default = 0)
+  * is stereo / mono agnostic
+  * is responsible for coordinating audio buffers in memory vs disk
+  * has the biggest risk of memory leak
+
+event:
+  * the smallest unit of meta, midi, and / or audio data
+  * for a midi note it would consist of an on message, a duration, and an off message
+  * audio in and out can be disabled
+    - maybe an event doesn't even touch audio
+    - event only communicates optionally with a wavetable
+  * midi in and out can be disabled
+  * meta in and out can be disabled
+
+clip:
+  * an erray of events with timestamps
+  * can have lanes for all midi datastreams (non, nof, at, cc, pc, cp, pb)
+  * a lane is probably not enabled by default
+  * contains an optional wavetable which overrides the track wavetable for that note
+    - does the presence of content in the wavetable override the whole track wavetable?
+      + simpler for end users, but might limit some useful features with live drums
+    - contains info about alternate takes
+  * contains quantization info
+    - can be started in time with global transport or triggered individually
+    - default to in time with global transport
+  * can be disabled / enabled
+  * can loop
+    - i often write little rules-based algorithms to define variation on loops
+      + maybe would be useful to have these as built in options with parameters
+      + first loop = no variety, add increasing variety but reset to init occasionally
+  * master transpose control
+    - steps and cents
+  * is there value in setting a key?
+    - useful for musicians who don't know theory
+    - ability to auto transpose for game and live performance
+  * can have time signature defined
+    - defaults to 4/4 if tempo time or none if decimal
+    - overrides sequencer time signature if set
+  * has information about stretch points for time manipulation (eventually)
+    - not now. not for a while. rubber band api to start probably.
+    - stretch point, percentage of stretch
+
+sequencer:
+  * contains a collection of clips
+  * has information about overall clip stretch (eventually)
+    - start, end, total stretch rate (calculated from start and end)
+    - rubber band api
+    - no need to implement any time soon
+  * bool to follow either tempo time or decimal time
+    - probably a global config for default, but easy access for user to change
+    - voice, field recording, and podcast don't want tempo time
+    - music rarely wants decimal time
+    - film and games often need both
+    - some systems also have external timeclock and smpte time
+      + there's no pressing need to implement these, but maybe an enum to futureproof
+  * has time signature
+    - defaults to 4/4 if tempo time or none if decimal
+  * by default includes a midi humanization node with parameters at 0
+  * by default starts all clips in time with transport unless clip overrides
+  * this is the first thing to get functional i think
+    - we can't test any of the other stuff without this working
+    - this is what i was working on when i walked away
+    - hopefully some of that code can be built on
+
+track:
+  * a node with many subnodes
+  * probably the most complex general purpose node
+  * has transport controls
+  * has a sequencer
+  * has a wavetable slot (active by default)
+  * has a synth node slot (virtual instrument)
+  * has a dsp node slot (audio insert)
+  * has a midi node slot (randomization)
+  * by default connects to output node
+  * can record, mute, or solo
+  * has options for multiple views in gui for different workflows
+    - maybe an enum that toggles standard view styles
+    - but all view parameters are able to be blended for more control
+    - choosing an enum overrides and resets blended view parameters
+
+parsing node:
+  * takes non-midi input and tries to convert it to midi
+  * what safeguards exist to keep this from causing (bad) chaos?
+
+midi node:
+  * takes midi input, transforms it in a way, outputs midi
+  * can be set generatively (i.e. no midi input needed, just an open data spigot)
+  * midi note velocities can be tricky
+    - needs to have a system to send out velocity 0 at a logical time
+    - otherwise synths get stuck playing a single note if operation is performed badly
+
+synth node:
+  * a node with many subnodes
+  * takes midi in, can pass midi thru, outputs audio
+  * this is also where a VSTi host would live
+
+noise node:
+  * a random data spigot
+  * can be started or stopped
+  * has a few noise profiles to choose from
+  * parameters for scale of noise etc...
+
+oscillator node:
+  * a node that generates a basic waveform
+  * it can either take pitch from midi notes or ignore pitch and just trigger
+  * parameters for duty cycle and morph
+
+dsp:
+  * a node with many subnodes
+  * takes midi in, audio in, sidechain in, parameter in, sends audio out
+  * can have many parameters
+  * this is also where a VST host would live
+  * this is one of the last things we should worry about, it's gonna be hard
+
+some super low level nodes for modular dsp building:
+  * by mixing and matching all of these elements we can build any standard effect
+
+clamp / limit:
+  * takes x audio and clamps it to y
+
+clip:
+  * takes x audio and clamps it to y with gusto
+  * some enum to choose clip style
+    - analog, tube, digital, invert, etc...
+
+gain:
+  * takes x audio and increases or decreases it by y%
+  * can a percentage based gain node work for audio and midi both then?
+    - no-one ever does it this way. typically these are split. could be cool to try.
+
+fade / envelope:
+  * takes x audio and increases or decreases it by y% over t
+  * needs regular global time pings
+  * can be tempo or decimal time
+  * should this be further abstracted and just control the gain parameter?
+    - this would allow for dynamic frequency controls too
+    - some really powerful electronic music tools work this way
+  * or is it an envelope that can control ANY parameter?
+  * all ADSR controls derive from this
+
+frequency:
+  * performs a volume operation in frequency domain
+  * Q, Frequency, Gain, style (shelf, bandpass, etc...), algorithm, slope
+  * building block of EQ
+
+pitch:
+  * changes the pitch of an audio frame, could also change midi pitch?
+  * can be clamped to steps or not
+
+reverb:
+  * it's reverb
+  * convolution based probably
+
+time:
+  * delays x audio by y time
+  * either tempo or decimal time
+
+lfo:
+  * an oscillator to automate other nodes
+  * also a band from the 90's
+  * either tempo or decimal time
+
+algorithm:
+  * any real hardware emulation is too complex to pull off in a node-based system
+  * there needs to be a node that's just a "really complex equation goes here"
+
+fft:
+  * converts from time domain to frequency domain and back again
+  * eventually an enum of different fft algorithms and bands would be powerful
+
+analysis:
+  * performs an analytical function using aubio or similar library
+  * usually audio in, midi out
+  * maybe should having caching / freezing defaulted
+    - processing hit of analysis can be large
+
+mix:
+  * mixes multiple audio streams by percentages
+
+some humanization nodes:
+
+pitch variety:
+  * adds some variety to audio pitch
+  * midi implementation needs to be highly structured and rules based
+    - would require me to do a c++ implementation of my max msp patches
+    - but at least the basic algorithm is already written
+
+time variety:
+  * adds some variety to audio or midi event time
+  * can be in tempo or decimal time
+
+velocity variety:
+  * randomizes velocity within a range
+  * probably midi only
